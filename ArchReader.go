@@ -1,34 +1,66 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/goburrow/modbus"
 )
 
+const reg_quantity = 32
+
+var mb_arr []byte
+
+/*
+	type archive struct {
+		ArchNumber uint16
+		ArchType   byte
+		LastFlag   byte
+		ArchTime   uint16
+		data       [53]byte
+	}
+*/
 func main() {
 	var comport string
-	var Slave, temp byte
-	var FirstReg uint16
+	var slave byte
+	var firstReg uint16
+	var needArch uint32
 	fmt.Print("Введите Com-порт:")
 	fmt.Scan(&comport)
 	fmt.Print("Введите modbus адрес ПЛК:")
-	fmt.Scan(&Slave)
+	fmt.Scan(&slave)
 	fmt.Print("Введите первый регистр:")
-	fmt.Scan(&FirstReg)
+	fmt.Scan(&firstReg)
+	for {
+		fmt.Print("Введите номер требуемого архива:")
+		fmt.Scan(&needArch)
+		ReadArch(needArch, comport, slave, firstReg)
+	}
 
-	handler := modbus.NewRTUClientHandler("COM" + comport)
+}
+
+func ReadArch(need uint32, port string, slave byte, fReg uint16) {
+	var temp byte
+	//	var bt [2]byte = [2]byte{5, 0}
+	handler := modbus.NewRTUClientHandler("COM" + port)
 	handler.BaudRate = 115200
 	handler.DataBits = 8
 	handler.Parity = "N"
 	handler.StopBits = 1
-	handler.SlaveId = Slave
+	handler.SlaveId = slave
 	handler.Timeout = 1000
+	buf := make([]byte, 4)
+	binary.BigEndian.PutUint32(buf, need)
 
-	err := handler.Connect()
-	defer handler.Close()
+	//defer handler.Close()
 	client := modbus.NewClient(handler)
-	mb_arr, err := client.ReadHoldingRegisters(FirstReg, 32) //412
+	_, err := client.WriteMultipleRegisters(410, 2, buf) //Write Archive number
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	mb_arr, err = client.ReadHoldingRegisters(fReg+2, reg_quantity) //412 for Cilk
+	handler.Close()
 	if err != nil {
 		fmt.Println(err)
 		return
