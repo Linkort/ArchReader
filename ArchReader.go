@@ -3,73 +3,52 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
-
-	"github.com/goburrow/modbus"
+	"log"
+	"os"
+	"os/exec"
+	"time"
 )
 
-const reg_quantity = 32
+var RTM_req = []byte{0x7e, 0x11, 0xf0, 0x0e, 0x00, 0x52, 0x37, 0x1E, 0x00, 0x0f, 0x00, 0x00, 0x00, 0x2b, 0x75, 0x7e}
 
-var mb_arr []byte
-
-/*
-	type archive struct {
-		ArchNumber uint16
-		ArchType   byte
-		LastFlag   byte
-		ArchTime   uint16
-		data       [53]byte
+func errfunc(err error) {
+	if err != nil {
+		log.Fatal(err.Error())
 	}
-*/
-func main() {
-	var comport string
-	var slave byte
-	var firstReg uint16
-	var needArch uint32
-	fmt.Print("Введите Com-порт:")
-	fmt.Scan(&comport)
-	fmt.Print("Введите modbus адрес ПЛК:")
-	fmt.Scan(&slave)
-	fmt.Print("Введите первый регистр:")
-	fmt.Scan(&firstReg)
-	for {
-		fmt.Print("Введите номер требуемого архива:")
-		fmt.Scan(&needArch)
-		ReadArch(needArch, comport, slave, firstReg)
-	}
-
 }
 
-func ReadArch(need uint32, port string, slave byte, fReg uint16) {
-	var temp byte
-	//	var bt [2]byte = [2]byte{5, 0}
-	handler := modbus.NewRTUClientHandler("COM" + port)
-	handler.BaudRate = 115200
-	handler.DataBits = 8
-	handler.Parity = "N"
-	handler.StopBits = 1
-	handler.SlaveId = slave
-	handler.Timeout = 1000
-	buf := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf, need)
+func Read_response(file *os.File) (response [76]byte) {
+	ch := make(chan [76]byte)
+	go func() {
+		var arr [76]byte
+		for {
+			err := binary.Read(file, binary.BigEndian, &arr)
+			if err != nil {
+				continue
+			}
+			break
+		}
+		ch <- arr
+	}()
 
-	//defer handler.Close()
-	client := modbus.NewClient(handler)
-	_, err := client.WriteMultipleRegisters(410, 2, buf) //Write Archive number
-	if err != nil {
-		fmt.Println(err)
-		return
+	select {
+	case response := <-ch:
+		fmt.Println(response)
+	case <-time.After(time.Second * 5):
+		fmt.Println("Timeout")
 	}
-	mb_arr, err = client.ReadHoldingRegisters(fReg+2, reg_quantity) //412 for Cilk
-	handler.Close()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	//byte swap, cause modbus response data swaped
-	for i := 0; i < 32; i++ {
-		temp = mb_arr[i*2]
-		mb_arr[i*2] = mb_arr[i*2+1]
-		mb_arr[i*2+1] = temp
-	}
-	fmt.Println(mb_arr)
+	return response
+}
+
+func main() {
+	// открытие порта
+	err := exec.Command("mode", "com2:115200,N,8,1,P").Run()
+	errfunc(err)
+	file, err := os.OpenFile("COM2", os.O_RDWR, 0700)
+	errfunc(err)
+	defer file.Close()
+	// Отправка запроса
+	file.Write(RTM_req)
+	// Чтение ответа
+	Read_response(file)
 }
