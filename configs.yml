@@ -1,17 +1,85 @@
+#mode типы записей:
+# 1 - byte  (1 byte, вывод в DEC без изменения)
+# 2 - word  (2 byte, вывод в DEC со сбором в слово)
+# 3 - real  (4 byte, вывод в DEC со сбором в float32)
+# 4 - dword (4 byte, вывод в DEC со сбором в uint32)
+# 5 - time  (4 byte, сбор в unix, вывод в виде ЧЧ:ММ:CC ДД:ММ:ГГ)
+
 #Дефолты, применяются при пропуске ввода
-defs_com: !!str 5
+defs_com: !!str 2
 defs_baud: !!str 115200
-defs_plcaddress: 30
-#Шапка R7
-R7title_bytecount:
-  - 4
-  - 1
-  - 1
-  - 4
-  - 1
-R7title_comment:
-  - Номер архивной записи
-  - Тип записи
-  - Флаг последней записи
-  - Время формирования архива
-  - Порядковый номер ФБ архивации
+defs_plc: 30
+
+Archives:
+  - type: 0
+    name: Шапка R7
+    data:
+    - {mode: 4, text: Номер архивной записи}
+    - {mode: 1, text: Тип архивной записи}
+    - {mode: 1, text: Флаг последней записи}
+    - {mode: 5, text: Время формирования архива}
+    - {mode: 1, text: Порядковый номер ФБ архивации}
+  - type: 1
+    name: R5 over R7, Архив ГЗУ
+    data:
+    - {mode: 2, text: Кол-во записей в архиве}
+    - {mode: 1, text: Тип записи 1 = Архив ГЗУ}
+    - {mode: 1, text: Номер отвода}
+    - {mode: 4, text: Дебит}
+    - {mode: 1, text: Время начала - сек}
+    - {mode: 1, text: Время начала - мин}
+    - {mode: 1, text: Время начала - час}
+    - {mode: 1, text: Время начала - день}
+    - {mode: 1, text: Время начала - мес}
+    - {mode: 1, text: Время начала - год}
+    - {mode: 2, text: Длительность в минутах}
+  - type: 2
+    name: R5 over R7, Блок Гребенок, счетчик за интервал
+    data:
+    - {mode: 2, text: Кол-во записей в архиве}
+    - {mode: 1, text: Тип записи 2 = Блок Гребенок, счетчик за интервал}
+    - {mode: 1, text: Номер отвода(счетчика)}
+    - {mode: 4, text: Счетчик}
+    - {mode: 1, text: Время начала - сек}
+    - {mode: 1, text: Время начала - мин}
+    - {mode: 1, text: Время начала - час}
+    - {mode: 1, text: Время начала - день}
+    - {mode: 1, text: Время начала - мес}
+    - {mode: 1, text: Время начала - год}
+    - {mode: 2, text: Длительность в минутах}
+  - type: 4
+    name: R5 over R7, Слово состояния объекта Sost
+    data:
+    - {mode: 2, text: Кол-во записей в архиве}
+    - {mode: 1, text: Тип записи 4 = Слово состояния объекта Sost}
+    - {mode: 1, text: xxx}
+    - {mode: 1, text: Sost новый}
+    - {mode: 1, text: Sost1 новый}
+    - {mode: 1, text: Sost старый}
+    - {mode: 1, text: Sost1 старый}
+    - {mode: 1, text: Время начала - сек}
+    - {mode: 1, text: Время начала - мин}
+    - {mode: 1, text: Время начала - час}
+    - {mode: 1, text: Время начала - день}
+    - {mode: 1, text: Время начала - мес}
+    - {mode: 1, text: Время начала - год}
+    - {mode: 1, text: xxx}
+    - {mode: 1, text: xxx}
+  - type: 5
+    name: R5 over R7, Изменение DI
+    data:
+    - {mode: 2, text: Кол-во записей в архиве}
+    - {mode: 1, text: Тип архива R5 = Изменение DI}
+    - {mode: 1, text: номер входа DI}
+    - {mode: 1, text: Новое состояние DI}
+    - {mode: 1, text: xxx}
+    - {mode: 1, text: xxx}
+    - {mode: 1, text: xxx}
+    - {mode: 1, text: Время начала - сек}
+    - {mode: 1, text: Время начала - мин}
+    - {mode: 1, text: Время начала - час}
+    - {mode: 1, text: Время начала - день}
+    - {mode: 1, text: Время начала - мес}
+    - {mode: 1, text: Время начала - год}
+    - {mode: 1, text: xxx}
+    - {mode: 1, text: xxx}

@@ -14,29 +14,39 @@ import (
 )
 
 type configfile struct {
-	Com        string   `yaml:"defs_com"`
-	Baud       string   `yaml:"defs_baud"`
-	Plc        uint16   `yaml:"defs_plcaddress"`
-	TitleBytes []int    `yaml:"R7title_bytecount"`
-	TitleSpec  []string `yaml:"R7title_comment"`
+	DefsCom  string `yaml:"defs_com"`
+	DefsBaud string `yaml:"defs_baud"`
+	DefsPlc  uint16 `yaml:"defs_plc"`
+	Archives []struct {
+		Type uint8  `yaml:"type"`
+		Name string `yaml:"name"`
+		Data []struct {
+			Mode int    `yaml:"mode"`
+			Text string `yaml:"text"`
+		} `yaml:"data"`
+	} `yaml:"Archives"`
 }
 
 var Conf configfile
 
-func yamlRead() { //Чтение файла настроек и архивов
+var RTM_req_exam = []byte{0x7e, 0x11, 0xf0, 0x0e, 0x00, 0x52, 0x37, 0x1E, 0x00, 0x0f, 0x00, 0x00, 0x00, 0x2b, 0x75, 0x7e}                                                                                                                                                                  //4700
+var RTM_res_exam = []byte{126, 17, 240, 74, 0, 82, 55, 30, 144, 92, 18, 0, 0, 17, 0, 182, 227, 0, 100, 0, 0, 0, 5, 12, 0, 0, 0, 0, 0, 0, 0, 1, 1, 246, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 209, 202, 126} //4700
+
+func yamlRead() bool { //Чтение файла настроек и архивов
 	yfile, err := ioutil.ReadFile("configs.yml")
 	if err != nil {
 		fmt.Println(err.Error())
 		fmt.Println("Файл конфигурации не найден")
-		return
+		return false
 	}
 	if err = yaml.Unmarshal(yfile, &Conf); err != nil {
 		fmt.Println(err.Error())
 		fmt.Println("Ошибка в структуре файла конфигурации")
-		return
+		return false
 	}
 	//	fmt.Print(R7)
 	fmt.Println("Файл настроек прочитан")
+	return true
 }
 
 func Read_response(file *os.File) (res [76]byte) { //Чтение ответа
@@ -55,11 +65,10 @@ func Read_response(file *os.File) (res [76]byte) { //Чтение ответа
 
 	select {
 	case res := <-ch:
-		//Проверка на валидность пакета
-		fmt.Println("Ответ получен")
+		fmt.Print("\n Ответ получен:  \n")
 		return res
-	case <-time.After(time.Second * 5):
-		fmt.Println("Timeout")
+	case <-time.After(time.Second * 2):
+		log.Fatal("Timeout, нет ответа от ПЛК")
 	}
 	return res
 }
@@ -97,41 +106,98 @@ func errfunc(err error) { //вывод ошибки в лог при налич�
 	}
 }
 
+func makeTable(res []byte, AInd uint8) {
+	var B byte
+	var U16 uint16
+	var U32 uint32
+	var F32 float32
+
+	Archive := Conf.Archives[AInd]
+	var t, bytecount int //№ байта в архиве, кол-во байт в записи
+	//Разбор архива
+	for i, stroke := range Archive.Data { // по строкам данных архива в yaml
+		fmt.Printf("  %2d |  %02X ", t, res[t]) //вывод байта и его №
+		switch Archive.Data[i].Mode {
+		case 1: //1 byte
+			B = res[t]
+			fmt.Printf("|    %10d     | %s \n", B, stroke.Text)
+			bytecount = 1
+		case 2: //2 byte
+			U16 = binary.LittleEndian.Uint16(res[t : t+3])
+			fmt.Printf("|    %10d     | %s \n", U16, stroke.Text)
+			bytecount = 2
+		case 3: //4 byte - REAL
+			buf := bytes.NewReader(res[t : t+4])
+			binary.Read(buf, binary.LittleEndian, &F32)
+			fmt.Printf("| %18F | %s \n", F32, stroke.Text)
+			bytecount = 4
+		case 4: //4 byte - DWORD
+			U32 = binary.LittleEndian.Uint32(res[t : t+4])
+			fmt.Printf("|    %10d     | %s \n", U32, stroke.Text)
+			bytecount = 4
+		case 5: //4 byte - TIME
+			U32 = binary.LittleEndian.Uint32(res[t : t+4])
+			fmt.Printf("|    %10d     | %s   %s \n", U32, time.Unix(int64(U32), 0).Format("01-02-2006 15:04:05"), stroke.Text)
+			bytecount = 3
+		}
+
+		for t++; bytecount > 1; bytecount-- { // Вывод пустых строк
+			fmt.Printf("  %2d |  %02X | \n", t, res[t])
+			t++
+		}
+	}
+}
+
 func main() {
-	yamlRead() //Чтение YAML
-	//Ввод значений
+
+	var ArchType, Archindex uint8
 	var needArch uint32
+	yamlRead() //Чтение YAML
+
+	//Ввод значений
+
 	fmt.Print("Введите Com-порт: ")
-	fmt.Scanln(&Conf.Com)
+	fmt.Scanln(&Conf.DefsCom)
 	fmt.Print("Введите modbus адрес ПЛК: ")
-	fmt.Scanln(&Conf.Plc)
+	fmt.Scanln(&Conf.DefsPlc)
 	// открытие порта
-	exec.Command("mode", "com"+Conf.Com+":"+Conf.Baud+",N,8,1").Run() //Настройка порта
-	file, err := os.OpenFile("COM"+Conf.Com, os.O_RDWR, 0700)
+	exec.Command("mode", "com"+Conf.DefsCom+":"+Conf.DefsBaud+",N,8,1").Run() //Настройка порта
+	file, err := os.OpenFile("COM"+Conf.DefsCom, os.O_RDWR, 0700)
 	errfunc(err)
 	defer file.Close()
+
 	for {
 		fmt.Print("Введите № требуемого архива: ")
-		if fmt.Scanln(&needArch); needArch == 0 {
-			needArch = 1073741824 //Запрос последнего архива. Если запрашиваемый №архива > №последнего - ПЛК вышлет последний.
+		if fmt.Scanln(&needArch); needArch == 0 { //Запрос последнего архива.
+			needArch = 2147483647
 		}
-		// Формирование и отправка запроса
-		request(Conf.Plc, needArch, file)
-		// Чтение ответа
-		RTMresponse := Read_response(file)
-		fmt.Println(RTMresponse)
-		//Разбор шаки архива
-		var t = 9 //адрес начала данных в ответе
-		for i, count := range Conf.TitleBytes {
-			for j := 0; j < count; j++ {
-				if j == 0 {
-					fmt.Println(RTMresponse[t], "---", Conf.TitleBytes[i], "---", Conf.TitleSpec[i])
-				} else {
-					fmt.Println(RTMresponse[t])
-				}
-				t++
+
+		request(Conf.DefsPlc, needArch, file) //Формирование и отправка запроса
+		RTMresponse := Read_response(file)    // Чтение ответа
+
+		//RTMresponse := RTM_res_exam
+		for _, t := range RTMresponse { // вывод ответа
+			fmt.Printf("%02X ", t)
+		}
+		if RTMresponse[13] == 17 {
+			ArchType = uint8(RTMresponse[22])
+		} else {
+			ArchType = uint8(RTMresponse[13])
+		}
+		//Поиск архива
+		for ind, tt := range Conf.Archives {
+			if tt.Type == ArchType {
+				Archindex = uint8(ind)
+				break
 			}
 		}
+
+		fmt.Println("\n -------------------- ТИП АРХИВА: ", Conf.Archives[Archindex].Name, "--------------------\n ")
+		fmt.Println("  №  | HEX |        DEC        |  TEXT  ")
+		fmt.Println(" ----+-----+-------------------+----------------------------------------------------------")
+		makeTable(RTMresponse[9:75], 0) //шапка
+		fmt.Println(" ----+-----+-------------------+----------------------------------------------------------")
+		makeTable(RTMresponse[20:75], Archindex) //архив
 	}
 
 }
