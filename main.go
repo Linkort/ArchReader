@@ -4,50 +4,14 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
-
-type configfile struct {
-	DefsCom  string `yaml:"defs_com"`
-	DefsBaud string `yaml:"defs_baud"`
-	DefsPlc  uint16 `yaml:"defs_plc"`
-	Archives []struct {
-		Type uint8  `yaml:"type"`
-		Name string `yaml:"name"`
-		Data []struct {
-			Mode int    `yaml:"mode"`
-			Text string `yaml:"text"`
-		} `yaml:"data"`
-	} `yaml:"Archives"`
-}
-
-var Conf configfile
 
 var RTM_req_exam = []byte{0x7e, 0x11, 0xf0, 0x0e, 0x00, 0x52, 0x37, 0x1E, 0x00, 0x0f, 0x00, 0x00, 0x00, 0x2b, 0x75, 0x7e}                                                                                                                                                                  //4700
 var RTM_res_exam = []byte{126, 17, 240, 74, 0, 82, 55, 30, 144, 92, 18, 0, 0, 17, 0, 182, 227, 0, 100, 0, 0, 0, 5, 12, 0, 0, 0, 0, 0, 0, 0, 1, 1, 246, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 209, 202, 126} //4700
-
-func yamlRead() bool { //Чтение файла настроек и архивов
-	yfile, err := ioutil.ReadFile("configs.yml")
-	if err != nil {
-		fmt.Println(err.Error())
-		fmt.Println("Файл конфигурации не найден")
-		return false
-	}
-	if err = yaml.Unmarshal(yfile, &Conf); err != nil {
-		fmt.Println(err.Error())
-		fmt.Println("Ошибка в структуре файла конфигурации")
-		return false
-	}
-	//	fmt.Print(R7)
-	fmt.Println("Файл настроек прочитан")
-	return true
-}
 
 func Read_response(file *os.File) (res [76]byte) { //Чтение ответа
 	ch := make(chan [76]byte)
@@ -106,13 +70,13 @@ func errfunc(err error) { //вывод ошибки в лог при налич�
 	}
 }
 
-func makeTable(res []byte, AInd uint8) {
+func makeTable(res []byte, AInd uint8, conf config) {
 	var B byte
 	var U16 uint16
 	var U32 uint32
 	var F32 float32
 
-	Archive := Conf.Archives[AInd]
+	Archive := conf.Archives[AInd]
 	var t, bytecount int //№ байта в архиве, кол-во байт в записи
 	//Разбор архива
 	for i, stroke := range Archive.Data { // по строкам данных архива в yaml
@@ -152,17 +116,21 @@ func main() {
 
 	var ArchType, Archindex uint8
 	var needArch uint32
-	yamlRead() //Чтение YAML
+
+	conf, err := getConfigYAML("config.yml")
+	if err != nil {
+		log.Fatal(err.Error())
+	}
 
 	//Ввод значений
 
 	fmt.Print("Введите Com-порт: ")
-	fmt.Scanln(&Conf.DefsCom)
+	fmt.Scanln(&conf.DefsCom)
 	fmt.Print("Введите modbus адрес ПЛК: ")
-	fmt.Scanln(&Conf.DefsPlc)
+	fmt.Scanln(&conf.DefsPlc)
 	// открытие порта
-	exec.Command("mode", "com"+Conf.DefsCom+":"+Conf.DefsBaud+",N,8,1").Run() //Настройка порта
-	file, err := os.OpenFile("COM"+Conf.DefsCom, os.O_RDWR, 0700)
+	exec.Command("mode", "com"+conf.DefsCom+":"+conf.DefsBaud+",N,8,1").Run() //Настройка порта
+	file, err := os.OpenFile("COM"+conf.DefsCom, os.O_RDWR, 0700)
 	errfunc(err)
 	defer file.Close()
 
@@ -172,7 +140,7 @@ func main() {
 			needArch = 2147483647
 		}
 
-		request(Conf.DefsPlc, needArch, file) //Формирование и отправка запроса
+		request(conf.DefsPlc, needArch, file) //Формирование и отправка запроса
 		RTMresponse := Read_response(file)    // Чтение ответа
 
 		//RTMresponse := RTM_res_exam
@@ -185,19 +153,19 @@ func main() {
 			ArchType = uint8(RTMresponse[13])
 		}
 		//Поиск архива
-		for ind, tt := range Conf.Archives {
+		for ind, tt := range conf.Archives {
 			if tt.Type == ArchType {
 				Archindex = uint8(ind)
 				break
 			}
 		}
 
-		fmt.Println("\n -------------------- ТИП АРХИВА: ", Conf.Archives[Archindex].Name, "--------------------\n ")
+		fmt.Println("\n -------------------- ТИП АРХИВА: ", conf.Archives[Archindex].Name, "--------------------\n ")
 		fmt.Println("  №  | HEX |        DEC        |  TEXT  ")
 		fmt.Println(" ----+-----+-------------------+----------------------------------------------------------")
-		makeTable(RTMresponse[9:75], 0) //шапка
+		makeTable(RTMresponse[9:75], 0, conf) //шапка
 		fmt.Println(" ----+-----+-------------------+----------------------------------------------------------")
-		makeTable(RTMresponse[20:75], Archindex) //архив
+		makeTable(RTMresponse[20:75], Archindex, conf) //архив
 	}
 
 }
