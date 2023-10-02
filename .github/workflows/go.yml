@@ -27,8 +27,8 @@ jobs:
       run: |
         env GOOS=windows GOARCH=amd64 go build -v -o ArchReader.exe .
         env GOOS=linux GOARCH=amd64 go build -v -o ArchReader .
-        zip -r ${{ github.event.repository.name }}-windows-amd64.zip ArchReader.exe configs.yml
-        tar -cvf ${{ github.event.repository.name }}-linux-amd64.tar ArchReader configs.yml
+        zip -r ${{ github.event.repository.name }}-windows-amd64.zip ArchReader.exe config.yml
+        tar -cvf ${{ github.event.repository.name }}-linux-amd64.tar ArchReader config.yml
         
     # - name: Test
     #   run: go test -v ./...
