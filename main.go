@@ -102,7 +102,7 @@ func makeTable(res []byte, AInd uint8, conf config) {
 		case 5: //4 byte - TIME
 			U32 = binary.LittleEndian.Uint32(res[t : t+4])
 			fmt.Printf("|    %10d     | %s   %s \n", U32, time.Unix(int64(U32), 0).Format("01-02-2006 15:04:05"), stroke.Text)
-			bytecount = 3
+			bytecount = 4
 		}
 
 		for t++; bytecount > 1; bytecount-- { // Вывод пустых строк
